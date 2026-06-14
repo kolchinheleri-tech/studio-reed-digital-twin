@@ -1,0 +1,8 @@
+pandas
+numpy
+trimesh
+scipy
+open3d
+pygltflib
+networkx
+rtree

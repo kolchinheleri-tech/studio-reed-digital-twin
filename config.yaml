@@ -1,0 +1,24 @@
+# Studio Reed Digital Twin configuration
+# Units are millimetres.
+
+paths:
+  master_csv: data/master.csv
+  scans_dir: scans
+  ideal_models_dir: ideal_models
+  output_dir: output
+
+processing:
+  # If Polycam exports in metres or centimetres, change this.
+  # Rhino/Grasshopper workflow should aim for mm.
+  scale_to_mm: 1.0
+
+  # A simple scan is accepted if length and diameter are inside tolerances.
+  default_tolerance_length_mm: 10
+  default_tolerance_diameter_mm: 4
+
+  # Set true later if you add ideal GLB models and want Open3D comparison.
+  compare_to_ideal_models: false
+
+open3d:
+  sample_points: 5000
+  icp_threshold_mm: 15

@@ -1,0 +1,4 @@
+piece_id,assembly_order,target_position,expected_length_mm,expected_diameter_mm,tolerance_length_mm,tolerance_diameter_mm,notes
+P001,1,A01,500,25,10,4,example row - replace with Grasshopper export
+P002,2,A02,485,24,10,4,example row - replace with Grasshopper export
+P003,3,A03,510,26,10,4,example row - replace with Grasshopper export
