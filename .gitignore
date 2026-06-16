@@ -1,4 +1,23 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
-output/*.csv
+
+# Output
+output/
+*.csv
+
+# Scan files
+scans/
+*.obj
+*.glb
+*.gltf
+*.ply
+*.stl
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
