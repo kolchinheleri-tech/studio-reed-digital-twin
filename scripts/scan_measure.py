@@ -1,9 +1,10 @@
 """
-Measures all Polycam GLB/GLTF/OBJ/STL/PLY scans in the scans/ folder.
+Measures all Polycam / KIRI Engine GLB/GLTF/OBJ/STL/PLY scans in the scans/ folder.
 Outputs: output/scan_results.csv
 
 Main idea:
-- file name = piece_id, for example P001.glb -> P001
+- If file is scans/P001.obj -> piece_id = P001
+- If file is scans/P001/3DModel.obj -> piece_id = P001
 - mesh bounding box gives approximate length / diameter
 - this is not a full metrology tool, but it is good for sorting and first-pass QC
 """
@@ -97,6 +98,20 @@ def measure_mesh(mesh: trimesh.Trimesh, scale_to_mm: float = 1.0) -> dict:
     }
 
 
+def get_piece_id(path: Path, scans_dir: Path) -> str:
+    """
+    Get piece ID from file path.
+
+    Supports:
+    scans/P001.obj -> P001
+    scans/P001/3DModel.obj -> P001
+    """
+    if path.parent == scans_dir:
+        return path.stem
+
+    return path.parent.name
+
+
 def scan_folder(scans_dir: Path, output_dir: Path, scale_to_mm: float) -> pd.DataFrame:
     """Scan all supported 3D files in scans_dir and save scan_results.csv."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -105,12 +120,13 @@ def scan_folder(scans_dir: Path, output_dir: Path, scale_to_mm: float) -> pd.Dat
     rows = []
 
     files = sorted(
-        path for path in scans_dir.iterdir()
+        path
+        for path in scans_dir.rglob("*")
         if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
     )
 
     for path in files:
-        piece_id = path.stem
+        piece_id = get_piece_id(path, scans_dir)
 
         try:
             mesh = load_mesh(path)
@@ -148,9 +164,14 @@ def scan_folder(scans_dir: Path, output_dir: Path, scale_to_mm: float) -> pd.Dat
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--scans", default="scans", help="Folder containing Polycam exports")
+    parser.add_argument("--scans", default="scans", help="Folder containing scan exports")
     parser.add_argument("--output", default="output", help="Output folder")
-    parser.add_argument("--scale", type=float, default=1.0, help="Scale factor to convert model units to mm")
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=1.0,
+        help="Scale factor to convert model units to mm"
+    )
 
     args = parser.parse_args()
 
