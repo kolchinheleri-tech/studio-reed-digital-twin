@@ -1,4 +1,22 @@
-piece_id,assembly_order,target_position,expected_length_mm,expected_diameter_mm,tolerance_length_mm,tolerance_diameter_mm,expected_chamber_length_mm,expected_diameter_at_cut_mm,notes
-P001,1,A01,495,25.5,15,5,220,25.5,manual measured
-P002,2,A02,508,25.7,15,5,280,25.7,manual measured
-P003,3,A03,510,26,20,999,,,placeholder
+piece_id,assembly_order,group_name,tree_id,angle_deg,expected_length_mm,expected_diameter_mm,tolerance_length_mm,tolerance_diameter_mm,expected_chamber_length_mm,expected_diameter_at_cut_mm
+
+P001,1,upper_tree_1,1,20,256.34,25.5,15,5,,
+P002,2,upper_tree_1,1,20,256.34,25.5,15,5,,
+P003,3,upper_tree_1,1,20,256.34,25.5,15,5,,
+P004,4,upper_tree_1,1,20,256.34,25.5,15,5,,
+P005,5,upper_tree_1,1,20,256.34,25.5,15,5,,
+P006,6,upper_tree_1,1,20,256.34,25.5,15,5,,
+
+P007,7,upper_tree_2,2,20,256.34,25.5,15,5,,
+P008,8,upper_tree_2,2,20,256.34,25.5,15,5,,
+P009,9,upper_tree_2,2,20,256.34,25.5,15,5,,
+P010,10,upper_tree_2,2,20,256.34,25.5,15,5,,
+P011,11,upper_tree_2,2,20,256.34,25.5,15,5,,
+P012,12,upper_tree_2,2,20,256.34,25.5,15,5,,
+
+P013,13,upper_tree_3,3,20,256.34,25.5,15,5,,
+P014,14,upper_tree_3,3,20,256.34,25.5,15,5,,
+P015,15,upper_tree_3,3,20,256.34,25.5,15,5,,
+P016,16,upper_tree_3,3,20,256.34,25.5,15,5,,
+P017,17,upper_tree_3,3,20,256.34,25.5,15,5,,
+P018,18,upper_tree_3,3,20,256.34,25.5,15,5,,

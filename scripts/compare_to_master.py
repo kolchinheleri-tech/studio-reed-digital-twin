@@ -1,22 +1,18 @@
 """
 Compares measured scans with the Grasshopper/Rhino master CSV.
-Outputs:
-- output/assembly_status.csv
-- output/missing_pieces.csv
-- output/check_pieces.csv
-- output/next_assembly_sequence.csv
 
-Important MVP decision:
-- Bounding-box diameter is NOT reliable for bamboo/KIRI scans.
-- Status is based on scan existence + length tolerance only.
-- More precise diameter_at_cut_mm comes later from profile_results.csv.
+Piece-level digital twin logic:
+- One row = one real reed/bamboo piece.
+- master.csv defines all expected pieces.
+- scan_results.csv contains pieces that have been scanned.
+- Missing scans stay in the output as red/missing.
+- Bounding-box diameter is kept as info, but status is based on scan existence + length tolerance only.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 import argparse
-
 import pandas as pd
 
 
@@ -33,12 +29,9 @@ def choose_status(row: pd.Series) -> str:
     length_error = row.get("length_error_mm")
     length_tol = row.get("tolerance_length_mm")
 
-    if (
-        pd.notna(length_error)
-        and pd.notna(length_tol)
-        and abs(length_error) > length_tol
-    ):
-        return "check_length"
+    if pd.notna(length_error) and pd.notna(length_tol):
+        if abs(length_error) > length_tol:
+            return "check_length"
 
     return "ok"
 
@@ -47,6 +40,7 @@ def compare(master_csv: Path, scan_results_csv: Path, output_dir: Path) -> pd.Da
     output_dir.mkdir(parents=True, exist_ok=True)
 
     master = pd.read_csv(master_csv)
+    master = master.dropna(how="all")
 
     if scan_results_csv.exists():
         try:
@@ -59,21 +53,22 @@ def compare(master_csv: Path, scan_results_csv: Path, output_dir: Path) -> pd.Da
     required = {
         "piece_id",
         "assembly_order",
-        "target_position",
+        "group_name",
+        "tree_id",
+        "angle_deg",
         "expected_length_mm",
         "expected_diameter_mm",
     }
 
     missing_columns = required - set(master.columns)
-
     if missing_columns:
         raise ValueError(f"Master CSV missing columns: {sorted(missing_columns)}")
 
     if "tolerance_length_mm" not in master.columns:
-        master["tolerance_length_mm"] = 10
+        master["tolerance_length_mm"] = 15
 
     if "tolerance_diameter_mm" not in master.columns:
-        master["tolerance_diameter_mm"] = 4
+        master["tolerance_diameter_mm"] = 5
 
     df = master.merge(scans, on="piece_id", how="left")
 
@@ -95,6 +90,7 @@ def compare(master_csv: Path, scan_results_csv: Path, output_dir: Path) -> pd.Da
     }
 
     df["rhino_color"] = df["status"].map(color_map).fillna("gray")
+
     df = df.sort_values("assembly_order")
 
     df.to_csv(output_dir / "assembly_status.csv", index=False)
@@ -129,7 +125,9 @@ def main() -> None:
     columns_to_show = [
         "piece_id",
         "assembly_order",
-        "target_position",
+        "group_name",
+        "tree_id",
+        "angle_deg",
         "length_mm",
         "length_error_mm",
         "status",
