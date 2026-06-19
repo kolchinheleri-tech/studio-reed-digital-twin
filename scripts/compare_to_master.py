@@ -6,7 +6,9 @@ Piece-level digital twin logic:
 - master.csv defines all expected pieces.
 - scan_results.csv contains pieces that have been scanned.
 - Missing scans stay in the output as red/missing.
-- Bounding-box diameter is kept as info, but status is based on scan existence + length tolerance only.
+- Approx/bounding-box diameter is kept only as info.
+- Status is based on scan existence + length tolerance only.
+- Node/chamber/cut quality is handled later in export_rhino_status.py.
 """
 
 from __future__ import annotations
@@ -26,14 +28,7 @@ def choose_status(row: pd.Series) -> str:
     if pd.isna(row.get("length_mm")):
         return "not_measured"
 
-    length_error = row.get("length_error_mm")
-    length_tol = row.get("tolerance_length_mm")
-
-    if pd.notna(length_error) and pd.notna(length_tol):
-        if abs(length_error) > length_tol:
-            return "check_length"
-
-    return "ok"
+    return "scanned"
 
 
 def compare(master_csv: Path, scan_results_csv: Path, output_dir: Path) -> pd.DataFrame:
@@ -55,9 +50,11 @@ def compare(master_csv: Path, scan_results_csv: Path, output_dir: Path) -> pd.Da
         "assembly_order",
         "group_name",
         "tree_id",
+        "branch_level",
         "angle_deg",
         "expected_length_mm",
-        "expected_diameter_mm",
+        "expected_diameter_min_mm",
+        "expected_diameter_max_mm",
     }
 
     missing_columns = required - set(master.columns)
@@ -67,27 +64,32 @@ def compare(master_csv: Path, scan_results_csv: Path, output_dir: Path) -> pd.Da
     if "tolerance_length_mm" not in master.columns:
         master["tolerance_length_mm"] = 15
 
-    if "tolerance_diameter_mm" not in master.columns:
-        master["tolerance_diameter_mm"] = 5
-
     df = master.merge(scans, on="piece_id", how="left")
 
     df["length_error_mm"] = df["length_mm"] - df["expected_length_mm"]
 
+    # Diameter is approximate info only. Do not use bounding-box diameter for status.
     if "approx_diameter_mm" in df.columns:
-        df["diameter_error_mm"] = df["approx_diameter_mm"] - df["expected_diameter_mm"]
+        df["diameter_range_mm"] = (
+            df["expected_diameter_min_mm"].astype(str)
+            + "-"
+            + df["expected_diameter_max_mm"].astype(str)
+        )
     else:
-        df["diameter_error_mm"] = None
+        df["diameter_range_mm"] = (
+            df["expected_diameter_min_mm"].astype(str)
+            + "-"
+            + df["expected_diameter_max_mm"].astype(str)
+        )
 
     df["status"] = df.apply(choose_status, axis=1)
 
     color_map = {
-        "ok": "green",
-        "missing": "red",
-        "scan_error": "magenta",
-        "not_measured": "orange",
-        "check_length": "yellow",
-    }
+    "scanned": "green",
+    "missing": "red",
+    "scan_error": "magenta",
+    "not_measured": "orange",
+}
 
     df["rhino_color"] = df["status"].map(color_map).fillna("gray")
 
@@ -127,9 +129,12 @@ def main() -> None:
         "assembly_order",
         "group_name",
         "tree_id",
+        "branch_level",
         "angle_deg",
+        "expected_length_mm",
         "length_mm",
         "length_error_mm",
+        "diameter_range_mm",
         "status",
         "rhino_color",
     ]
