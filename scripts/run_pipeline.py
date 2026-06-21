@@ -7,6 +7,7 @@ import sys
 def run(command: list[str]) -> None:
     print("\n> " + " ".join(command))
     completed = subprocess.run(command)
+
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
 
@@ -18,6 +19,8 @@ def main() -> None:
     parser.add_argument("--scans-dir", default="scans")
     parser.add_argument("--output", default="output")
     args = parser.parse_args()
+
+    output_dir = Path(args.output)
 
     run([
         sys.executable,
@@ -40,7 +43,7 @@ def main() -> None:
         sys.executable,
         "scripts/compare_to_master.py",
         "--master", args.master,
-        "--scans", str(Path(args.output) / "scan_results.csv"),
+        "--scans", str(output_dir / "scan_results.csv"),
         "--output", args.output,
     ])
 
@@ -49,9 +52,21 @@ def main() -> None:
         "scripts/export_rhino_status.py",
     ])
 
+    run([
+        sys.executable,
+        "scripts/assembly_planner.py",
+    ])
+
+    run([
+        sys.executable,
+        "scripts/cut_planner.py",
+    ])
+
     print("\nDone.")
-    print("Main Rhino/Grasshopper file:")
-    print(Path(args.output) / "rhino_digital_twin_status.csv")
+    print("Main Rhino/Grasshopper files:")
+    print(output_dir / "rhino_digital_twin_status.csv")
+    print(output_dir / "tree_assembly_status.csv")
+    print(output_dir / "cut_plan.csv")
 
 
 if __name__ == "__main__":

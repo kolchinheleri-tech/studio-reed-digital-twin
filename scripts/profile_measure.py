@@ -11,7 +11,6 @@ from scipy.signal import find_peaks
 
 SUPPORTED_EXTENSIONS = {".glb", ".gltf", ".obj", ".stl", ".ply"}
 
-
 OUTPUT_COLUMNS = [
     "piece_id",
     "scan_file",
@@ -36,10 +35,8 @@ def load_mesh(path: Path) -> trimesh.Trimesh:
             geom for geom in loaded.geometry.values()
             if isinstance(geom, trimesh.Trimesh)
         ]
-
         if not meshes:
             raise ValueError(f"No mesh found in {path}")
-
         mesh = trimesh.util.concatenate(meshes)
 
     elif isinstance(loaded, trimesh.Trimesh):
@@ -55,11 +52,10 @@ def load_mesh(path: Path) -> trimesh.Trimesh:
 def get_piece_id(path: Path, scans_dir: Path) -> str:
     if path.parent == scans_dir:
         return path.stem
-
     return path.parent.name
 
 
-def moving_average(values: np.ndarray, window: int = 9) -> np.ndarray:
+def moving_average(values: np.ndarray, window: int = 11) -> np.ndarray:
     if len(values) < window:
         return values
 
@@ -70,15 +66,8 @@ def moving_average(values: np.ndarray, window: int = 9) -> np.ndarray:
 def build_axis_profile(
     mesh: trimesh.Trimesh,
     scale_to_mm: float,
-    bin_count: int = 220,
+    bin_count: int = 260,
 ) -> dict:
-    """
-    Build radius profile along the main axis of the mesh.
-
-    This converts the bamboo mesh into a 1D profile:
-    x-axis = distance along bamboo
-    y-axis = approximate radius at that position
-    """
     points = np.asarray(mesh.vertices, dtype=float) * scale_to_mm
 
     center = points.mean(axis=0)
@@ -109,7 +98,7 @@ def build_axis_profile(
         if len(values) < 5:
             radius_profile.append(np.nan)
         else:
-            radius_profile.append(np.percentile(values, 55))
+            radius_profile.append(np.percentile(values, 60))
 
     radius_profile = np.array(radius_profile, dtype=float)
 
@@ -125,7 +114,7 @@ def build_axis_profile(
     if not np.any(valid):
         raise ValueError("Could not build valid radius profile")
 
-    smooth_radius = moving_average(radius_profile, window=9)
+    smooth_radius = moving_average(radius_profile, window=11)
 
     return {
         "total_length": total_length,
@@ -143,9 +132,6 @@ def diameter_at_position(
     position_mm: float,
     total_length_mm: float,
 ) -> float | None:
-    """
-    Estimate diameter at a specific position along the bamboo.
-    """
     cut_global = s_min + position_mm
     cut_window = max(total_length_mm * 0.025, 8.0)
 
@@ -158,16 +144,24 @@ def diameter_at_position(
     return diameter
 
 
+def empty_result(total_length: float, status: str) -> dict:
+    return {
+        "total_length_mm": round(float(total_length), 2),
+        "node_a_mm": None,
+        "node_b_mm": None,
+        "chamber_length_mm": None,
+        "cut_position_mm": None,
+        "diameter_at_cut_mm": None,
+        "left_tail_length_mm": None,
+        "right_tail_length_mm": None,
+        "profile_status": status,
+    }
+
+
 def measure_with_expected_chamber(
     profile: dict,
     expected_chamber_length_mm: float,
 ) -> dict:
-    """
-    Fast and stable MVP method.
-
-    If master.csv already tells us the chamber length,
-    we place the chamber in the center of the measured total length.
-    """
     total_length = profile["total_length"]
     s_min = profile["s_min"]
     centers = profile["centers"]
@@ -175,11 +169,7 @@ def measure_with_expected_chamber(
 
     node_a = (total_length - expected_chamber_length_mm) / 2
     node_b = node_a + expected_chamber_length_mm
-
     cut_position = (node_a + node_b) / 2
-
-    left_tail = node_a
-    right_tail = total_length - node_b
 
     diameter = diameter_at_position(
         centers=centers,
@@ -196,65 +186,89 @@ def measure_with_expected_chamber(
         "chamber_length_mm": round(float(expected_chamber_length_mm), 2),
         "cut_position_mm": round(float(cut_position), 2),
         "diameter_at_cut_mm": round(float(diameter), 2) if diameter is not None else None,
-        "left_tail_length_mm": round(float(left_tail), 2),
-        "right_tail_length_mm": round(float(right_tail), 2),
+        "left_tail_length_mm": round(float(node_a), 2),
+        "right_tail_length_mm": round(float(total_length - node_b), 2),
         "profile_status": "expected_chamber_centered",
     }
 
 
 def measure_with_auto_nodes(profile: dict) -> dict:
     """
-    Experimental automatic node detection.
+    Improved MVP bamboo node detection.
 
-    Used only when expected_chamber_length_mm is missing.
+    Logic:
+    - Build radius profile along reed axis.
+    - Ignore both scan ends because mesh ends often create false peaks.
+    - Detect local radius peaks.
+    - Choose two peaks that create a plausible chamber.
     """
     total_length = profile["total_length"]
     s_min = profile["s_min"]
     centers = profile["centers"]
     smooth_radius = profile["smooth_radius"]
 
-    prominence = max(np.std(smooth_radius) * 0.4, 0.5)
+    position_mm = centers - s_min
 
-    peaks, _ = find_peaks(
-        smooth_radius,
-        distance=len(smooth_radius) // 8,
+    edge_margin = max(total_length * 0.12, 35.0)
+    valid_mask = (position_mm > edge_margin) & (position_mm < total_length - edge_margin)
+
+    if not np.any(valid_mask):
+        return empty_result(total_length, "nodes_not_found")
+
+    peak_signal = smooth_radius.copy()
+
+    min_valid = np.nanmin(peak_signal[valid_mask])
+    peak_signal[~valid_mask] = min_valid
+
+    baseline = moving_average(peak_signal, window=31)
+    detail_signal = peak_signal - baseline
+
+    prominence = max(np.nanstd(detail_signal[valid_mask]) * 0.75, 0.18)
+    min_distance = max(10, len(peak_signal) // 14)
+
+    peaks, properties = find_peaks(
+        detail_signal,
+        distance=min_distance,
         prominence=prominence,
     )
 
-    node_a = None
-    node_b = None
-    chamber_length = None
-    status = "nodes_not_found"
+    peaks = [p for p in peaks if valid_mask[p]]
 
-    if len(peaks) >= 2:
-        peak_values = []
+    if len(peaks) < 2:
+        return empty_result(total_length, "nodes_not_found")
 
-        for peak in peaks:
-            position = centers[peak] - s_min
-            radius = smooth_radius[peak]
-            peak_values.append((radius, position))
+    candidates = []
 
-        peak_values.sort(reverse=True)
+    for i in range(len(peaks)):
+        for j in range(i + 1, len(peaks)):
+            a = float(position_mm[peaks[i]])
+            b = float(position_mm[peaks[j]])
+            chamber = b - a
 
-        selected = sorted([peak_values[0][1], peak_values[1][1]])
+            if chamber < 60:
+                continue
 
-        node_a = selected[0]
-        node_b = selected[1]
-        chamber_length = node_b - node_a
-        status = "auto_nodes_estimated"
+            if chamber > total_length * 0.88:
+                continue
 
-    if node_a is None or node_b is None:
-        return {
-            "total_length_mm": round(float(total_length), 2),
-            "node_a_mm": None,
-            "node_b_mm": None,
-            "chamber_length_mm": None,
-            "cut_position_mm": None,
-            "diameter_at_cut_mm": None,
-            "left_tail_length_mm": None,
-            "right_tail_length_mm": None,
-            "profile_status": status,
-        }
+            chamber_center = (a + b) / 2
+            center_penalty = abs(chamber_center - total_length / 2) / total_length
+
+            strength = (
+                float(detail_signal[peaks[i]])
+                + float(detail_signal[peaks[j]])
+            )
+
+            # Prefer strong peaks and reasonably centered chamber.
+            score = strength - center_penalty * 0.8
+
+            candidates.append((score, a, b, chamber))
+
+    if not candidates:
+        return empty_result(total_length, "nodes_not_found")
+
+    candidates.sort(reverse=True)
+    _, node_a, node_b, chamber_length = candidates[0]
 
     cut_position = (node_a + node_b) / 2
     left_tail = node_a
@@ -277,7 +291,7 @@ def measure_with_auto_nodes(profile: dict) -> dict:
         "diameter_at_cut_mm": round(float(diameter), 2) if diameter is not None else None,
         "left_tail_length_mm": round(float(left_tail), 2),
         "right_tail_length_mm": round(float(right_tail), 2),
-        "profile_status": status,
+        "profile_status": "auto_nodes_improved",
     }
 
 
